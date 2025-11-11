@@ -338,6 +338,9 @@ async function handleGenerateAudio() {
 
 // Audio Player Setup
 function setupAudioPlayer() {
+    let loadedCount = 0;
+    const totalAudios = state.segments.filter(s => s.audio_path).length;
+
     // Create audio elements for each segment
     state.audioElements = state.segments.map(segment => {
         if (segment.audio_path) {
@@ -353,6 +356,16 @@ function setupAudioPlayer() {
 
             audio.addEventListener('timeupdate', () => {
                 updateProgress();
+            });
+
+            // Recalculate timings when audio metadata is loaded
+            audio.addEventListener('loadedmetadata', () => {
+                loadedCount++;
+                // Once all audio files have loaded metadata, recalculate timings
+                if (loadedCount === totalAudios) {
+                    state.phraseTimings = calculatePhraseTiming();
+                    console.log('Phrase timings recalculated with actual audio durations');
+                }
             });
 
             return audio;
@@ -414,12 +427,19 @@ function calculatePhraseTiming() {
         const segmentPhrases = state.phrases.filter(p => p.segmentIndex === phrase.segmentIndex);
         const phraseCount = segmentPhrases.length;
 
-        // Estimate duration of audio (150 words per minute average)
-        const wordCount = (segment.text || '').split(/\s+/).length;
-        const estimatedDuration = (wordCount / 150) * 60; // seconds
+        // Use actual audio duration if available, otherwise estimate
+        let segmentDuration;
+        if (audio.duration && !isNaN(audio.duration) && audio.duration > 0) {
+            // Use actual audio duration for accurate timing
+            segmentDuration = audio.duration;
+        } else {
+            // Fall back to estimation (120 words per minute for more conservative estimate)
+            const wordCount = (segment.text || '').split(/\s+/).length;
+            segmentDuration = (wordCount / 120) * 60; // seconds
+        }
 
         // Divide equally among phrases
-        const phraseDuration = estimatedDuration / phraseCount;
+        const phraseDuration = segmentDuration / phraseCount;
         const startTime = phrase.phraseIndexInSegment * phraseDuration;
         const endTime = startTime + phraseDuration;
 
