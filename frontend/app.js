@@ -36,6 +36,12 @@ const currentTimeSpan = document.getElementById('current-time');
 const totalTimeSpan = document.getElementById('total-time');
 const speedSelect = document.getElementById('speed');
 const targetLangSelect = document.getElementById('target-lang');
+const translationEditor = document.getElementById('translation-editor');
+const translatedTextEditor = document.getElementById('translated-text-editor');
+const editorCharCount = document.getElementById('editor-char-count');
+const retranslateLangSelect = document.getElementById('retranslate-lang');
+const retranslateBtn = document.getElementById('retranslate-btn');
+const saveEditsBtn = document.getElementById('save-edits-btn');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -63,6 +69,11 @@ function setupEventListeners() {
     playBtn.addEventListener('click', handlePlay);
     pauseBtn.addEventListener('click', handlePause);
     speedSelect.addEventListener('change', handleSpeedChange);
+
+    // Editor controls
+    translatedTextEditor.addEventListener('input', updateCharCount);
+    retranslateBtn.addEventListener('click', handleRetranslate);
+    saveEditsBtn.addEventListener('click', handleSaveEdits);
 }
 
 // File Upload Handlers
@@ -168,6 +179,12 @@ async function handleTranslate() {
 
             showStatus(translateStatus, 'success', `Translation complete! Translated to ${targetLang.toUpperCase()}`);
 
+            // Show editor with translated text
+            translationEditor.classList.remove('hidden');
+            translatedTextEditor.value = state.translatedText;
+            retranslateLangSelect.value = targetLang;
+            updateCharCount();
+
             // Enable audio generation
             generateAudioBtn.disabled = false;
 
@@ -184,6 +201,86 @@ async function handleTranslate() {
     }
 }
 
+// Translation Editor Handlers
+function updateCharCount() {
+    const charCount = translatedTextEditor.value.length;
+    editorCharCount.textContent = `${charCount.toLocaleString()} characters`;
+}
+
+async function handleRetranslate() {
+    if (!state.documentId || !state.originalText) {
+        showStatus(translateStatus, 'error', 'Please upload and translate a document first');
+        return;
+    }
+
+    const sourceLang = document.getElementById('source-lang').value;
+    const newTargetLang = retranslateLangSelect.value;
+
+    showStatus(translateStatus, 'loading', 'Re-translating to ' + newTargetLang.toUpperCase() + '...');
+    retranslateBtn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/translate/document`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                document_id: state.documentId,
+                source_lang: sourceLang,
+                target_lang: newTargetLang,
+                service: 'google'
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            state.translatedText = data.translation.translated_text || data.translation.full_text;
+            state.targetLanguage = newTargetLang;
+
+            // Update editor
+            translatedTextEditor.value = state.translatedText;
+            updateCharCount();
+
+            showStatus(translateStatus, 'success', `Re-translated to ${newTargetLang.toUpperCase()}!`);
+
+            // Update target language dropdown
+            targetLangSelect.value = newTargetLang;
+
+            // Reset audio (needs regeneration)
+            generateAudioBtn.disabled = false;
+            audioPlayerContainer.classList.add('hidden');
+            textDisplay.classList.add('hidden');
+        } else {
+            showStatus(translateStatus, 'error', data.error || 'Re-translation failed');
+        }
+    } catch (error) {
+        showStatus(translateStatus, 'error', `Error: ${error.message}`);
+    } finally {
+        retranslateBtn.disabled = false;
+    }
+}
+
+function handleSaveEdits() {
+    const editedText = translatedTextEditor.value.trim();
+
+    if (!editedText) {
+        showStatus(translateStatus, 'error', 'Text cannot be empty');
+        return;
+    }
+
+    // Save edited text to state
+    state.translatedText = editedText;
+
+    showStatus(translateStatus, 'success', 'Edits saved! You can now generate audio with your changes.');
+
+    // Reset audio (needs regeneration with new text)
+    generateAudioBtn.disabled = false;
+    audioPlayerContainer.classList.add('hidden');
+    textDisplay.classList.add('hidden');
+}
+
 // Audio Generation Handlers
 async function handleGenerateAudio() {
     if (!state.documentId || !state.translatedText) {
@@ -195,13 +292,18 @@ async function handleGenerateAudio() {
     generateAudioBtn.disabled = true;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/tts/generate-document`, {
+        // Use edited text from editor or state
+        const textToSpeak = translatedTextEditor.value.trim() || state.translatedText;
+
+        const response = await fetch(`${API_BASE_URL}/tts/generate-custom`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify({
                 document_id: state.documentId,
+                translated_text: textToSpeak,
+                original_text: state.originalText,
                 language: state.targetLanguage,
                 service: 'gtts',
                 segment_type: 'sentence'
