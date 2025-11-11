@@ -23,7 +23,7 @@ class Config:
     # Translation settings
     DEFAULT_SOURCE_LANGUAGE = 'auto'
     SUPPORTED_LANGUAGES = [
-        'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi'
+        'en', 'es', 'fr', 'de', 'it', 'pt', 'ru', 'ja', 'ko', 'zh', 'ar', 'hi', 'id'
     ]
 
     # TTS settings
